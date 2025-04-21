@@ -90,18 +90,30 @@ class ArbitrageUI:
     def is_fetching_enabled(self):
         return self.is_running
 
-    def add_arbitrage(self, match_id: str, match_name: str, home: float, away: float, profit: float) -> None:
+    def add_arbitrage(self, match_id: str, match_name: str, home: float, away: float, profit: float, 
+                   home_bookmaker: str = None, away_bookmaker: str = None, 
+                   draw_bookmaker: str = None, draw_odds: float = None) -> None:
+        try:
+            self.profitable_tree.item(match_id)
+            return
+        except:
+            pass
+            
         now = datetime.now().strftime("%H:%M:%S")
         
         self.arb_details[match_id] = {
             "match_name": match_name,
             "home_odds": home,
             "away_odds": away,
+            "draw_odds": draw_odds,
             "profit": profit,
-            "time": now
+            "time": now,
+            "home_bookmaker": home_bookmaker,
+            "away_bookmaker": away_bookmaker,
+            "draw_bookmaker": draw_bookmaker
         }
         
-        odds_list = [home, away]
+        odds_list = [home, away] if draw_odds is None else [home, draw_odds, away]
         stakes_info = calculate_stakes_multi(odds_list, 100)
         self.arb_details[match_id]["stakes"] = stakes_info["stakes"]
         
@@ -124,6 +136,12 @@ class ArbitrageUI:
         is_arb: bool,
         profit: float,
     ) -> None:
+        try:
+            self.all_tree.item(match_id)
+            return
+        except:
+            pass
+            
         now = datetime.now().strftime("%H:%M:%S")
         icon = "✅" if is_arb else "❌"
         color = "green" if is_arb else "red"
@@ -137,7 +155,7 @@ class ArbitrageUI:
         self.all_tree.tag_configure("green", foreground="green")
         self.all_tree.tag_configure("red", foreground="red")
 
-    def load_from_history(self, history_entries: list) -> None:
+    def load_from_history(self, history_entries: list, seen_match_ids: set = None) -> None:
         counter = 0
         for entry in history_entries:
             if entry.get("is_arb", False):
@@ -148,9 +166,17 @@ class ArbitrageUI:
                     continue
                     
                 home_best = max(b["price_home"] for b in bookmakers if b["price_home"])
+                home_bookmaker = next((b["site"] for b in bookmakers if b["price_home"] == home_best), "Unknown")
+                
                 draw_prices = [b.get("price_draw") for b in bookmakers if b.get("price_draw")]
-                draw_best = max(draw_prices) if draw_prices else None
+                draw_best = None
+                draw_bookmaker = None
+                if draw_prices:
+                    draw_best = max(draw_prices)
+                    draw_bookmaker = next((b["site"] for b in bookmakers if b.get("price_draw") == draw_best), "Unknown")
+                
                 away_best = max(b["price_away"] for b in bookmakers if b["price_away"])
+                away_bookmaker = next((b["site"] for b in bookmakers if b["price_away"] == away_best), "Unknown")
                 
                 home_team = entry.get("home_team", "")
                 away_team = entry.get("away_team", "")
@@ -163,6 +189,9 @@ class ArbitrageUI:
                         match_name = f"{home_team} vs {away_team}"
                 else:
                     match_name = match_id
+                
+                if seen_match_ids is not None:
+                    seen_match_ids.add(match_id)
                 
                 self.add_any_match(
                     match_id=match_id,
@@ -178,7 +207,11 @@ class ArbitrageUI:
                     match_name=match_name,
                     home=home_best,
                     away=away_best,
-                    profit=entry.get("profit", 0.0)
+                    profit=entry.get("profit", 0.0),
+                    home_bookmaker=home_bookmaker,
+                    away_bookmaker=away_bookmaker,
+                    draw_bookmaker=draw_bookmaker,
+                    draw_odds=draw_best
                 )
                 
                 counter += 1
@@ -204,6 +237,12 @@ class ArbitrageUI:
         if not item_id:
             return
         
+        if "_" in item_id:
+            parent_id = item_id.split("_")[0]
+            if parent_id in self.expanded_items:
+                self._collapse_item(parent_id)
+            return
+        
         if item_id in self.expanded_items:
             self._collapse_item(item_id)
         else:
@@ -221,36 +260,56 @@ class ArbitrageUI:
                                                   self.profitable_tree.item(item_id)["values"][2],
                                                   self.profitable_tree.item(item_id)["values"][3]))
         
-        home_stake = details["stakes"][0]
-        away_stake = details["stakes"][1]
+        parent_idx = self.profitable_tree.index(item_id)
+        next_idx = parent_idx + 1
         
         home_id = f"{item_id}_home"
         away_id = f"{item_id}_away"
+        draw_id = f"{item_id}_draw"
         summary_id = f"{item_id}_summary"
+        
+        home_stake = details["stakes"][0]
+        away_stake = details["stakes"][1]
+        home_bookie = details.get("home_bookmaker", "Unknown")
+        away_bookie = details.get("away_bookmaker", "Unknown")
         
         self.profitable_tree.insert(
             "", "end", iid=home_id,
-            values=("", f"Home Bet - Odds: {details['home_odds']:.2f}", f"Stake: ${home_stake:.2f}", ""),
+            values=("", f"Home Bet - {home_bookie}", f"Odds: {details['home_odds']:.2f}", f"Stake: ${home_stake:.2f}"),
             tags=("detail",)
         )
+        self.profitable_tree.move(home_id, "", next_idx)
+        next_idx += 1
         
         self.profitable_tree.insert(
             "", "end", iid=away_id,
-            values=("", f"Away Bet - Odds: {details['away_odds']:.2f}", f"Stake: ${away_stake:.2f}", ""),
+            values=("", f"Away Bet - {away_bookie}", f"Odds: {details['away_odds']:.2f}", f"Stake: ${away_stake:.2f}"),
             tags=("detail",)
         )
+        self.profitable_tree.move(away_id, "", next_idx)
+        next_idx += 1
+        
+        if details.get("draw_bookmaker"):
+            draw_odds = details.get("draw_odds", 0)
+            draw_stake = details["stakes"][2] if len(details["stakes"]) > 2 else 0
+            draw_bookie = details.get("draw_bookmaker", "Unknown")
+            
+            self.profitable_tree.insert(
+                "", "end", iid=draw_id,
+                values=("", f"Draw Bet - {draw_bookie}", f"Odds: {draw_odds:.2f}", f"Stake: ${draw_stake:.2f}"),
+                tags=("detail",)
+            )
+            self.profitable_tree.move(draw_id, "", next_idx)
+            next_idx += 1
         
         total_stake = sum(details["stakes"])
+        
         self.profitable_tree.insert(
             "", "end", iid=summary_id,
             values=("", "Summary", f"Total: ${total_stake:.2f}", f"ROI: {(details['profit']/total_stake*100):.2f}%"),
             tags=("summary",)
         )
-        
-        parent_idx = self.profitable_tree.index(item_id)
-        self.profitable_tree.move(home_id, "", parent_idx + 1)
-        self.profitable_tree.move(away_id, "", parent_idx + 2)
-        self.profitable_tree.move(summary_id, "", parent_idx + 3)
+        self.profitable_tree.move(summary_id, "", next_idx)
         
         self.expanded_items.add(item_id)
         
@@ -267,9 +326,18 @@ class ArbitrageUI:
                                                   self.profitable_tree.item(item_id)["values"][2],
                                                   self.profitable_tree.item(item_id)["values"][3]))
         
-        self.profitable_tree.delete(f"{item_id}_home")
-        self.profitable_tree.delete(f"{item_id}_away")
-        self.profitable_tree.delete(f"{item_id}_summary")
+        detail_ids = [
+            f"{item_id}_home",
+            f"{item_id}_away",
+            f"{item_id}_draw",
+            f"{item_id}_summary"
+        ]
+        
+        for detail_id in detail_ids:
+            try:
+                self.profitable_tree.delete(detail_id)
+            except:
+                pass
         
         self.expanded_items.remove(item_id)
 

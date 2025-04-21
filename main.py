@@ -25,9 +25,17 @@ def _record_and_display(ui: ArbitrageUI, history: BettingHistory, match_id: str,
                         match_name: str, bookmakers: list[dict], 
                         home_team: str = "", away_team: str = "", sport: str = ""):
     home_best = max(b["price_home"] for b in bookmakers if b["price_home"])
+    home_bookmaker = next(b["site"] for b in bookmakers if b["price_home"] == home_best)
+    
     draw_prices = [b.get("price_draw") for b in bookmakers if b.get("price_draw")]
-    draw_best = max(draw_prices) if draw_prices else None
+    draw_best = None
+    draw_bookmaker = None
+    if draw_prices:
+        draw_best = max(draw_prices)
+        draw_bookmaker = next(b["site"] for b in bookmakers if b.get("price_draw") == draw_best)
+    
     away_best = max(b["price_away"] for b in bookmakers if b["price_away"])
+    away_bookmaker = next(b["site"] for b in bookmakers if b["price_away"] == away_best)
 
     odds_list = [home_best, away_best] if draw_best is None else [home_best, draw_best, away_best]
 
@@ -48,7 +56,17 @@ def _record_and_display(ui: ArbitrageUI, history: BettingHistory, match_id: str,
 
     ui.add_any_match(match_id, match_name, home_best, away_best, arb, profit)
     if arb:
-        ui.add_arbitrage(match_id, match_name, home_best, away_best, profit)
+        ui.add_arbitrage(
+            match_id=match_id, 
+            match_name=match_name, 
+            home=home_best, 
+            away=away_best, 
+            profit=profit,
+            home_bookmaker=home_bookmaker,
+            away_bookmaker=away_bookmaker,
+            draw_bookmaker=draw_bookmaker if draw_best else None,
+            draw_odds=draw_best
+        )
 
 def mock_odds_loop(ui: ArbitrageUI, history: BettingHistory):
     while True:
@@ -185,7 +203,7 @@ if __name__ == "__main__":
     history = BettingHistory()
     
     print("Loading historical arbitrages...")
-    ui.load_from_history(history.get_all())
+    ui.load_from_history(history.get_all(), seen_match_ids)
 
     if ODDS_API_KEY:
         print("🟢 Using real odds (3‑way capable)")
