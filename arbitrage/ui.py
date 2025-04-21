@@ -152,9 +152,21 @@ class ArbitrageUI:
                 draw_best = max(draw_prices) if draw_prices else None
                 away_best = max(b["price_away"] for b in bookmakers if b["price_away"])
                 
+                home_team = entry.get("home_team", "")
+                away_team = entry.get("away_team", "")
+                sport = entry.get("sport", "")
+                
+                if home_team and away_team:
+                    if sport:
+                        match_name = f"[{sport}] {home_team} vs {away_team}"
+                    else:
+                        match_name = f"{home_team} vs {away_team}"
+                else:
+                    match_name = match_id
+                
                 self.add_any_match(
                     match_id=match_id,
-                    match_name=match_id,
+                    match_name=match_name,
                     home=home_best,
                     away=away_best,
                     is_arb=True,
@@ -163,7 +175,7 @@ class ArbitrageUI:
                 
                 self.add_arbitrage(
                     match_id=match_id,
-                    match_name=match_id,
+                    match_name=match_name,
                     home=home_best,
                     away=away_best,
                     profit=entry.get("profit", 0.0)

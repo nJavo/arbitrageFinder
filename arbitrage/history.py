@@ -29,10 +29,16 @@ class BettingHistory:
         is_arb: bool,
         profit: float,
         timestamp: str | None = None,
+        home_team: str = "",
+        away_team: str = "",
+        sport: str = ""
     ) -> None:
         ts = timestamp or datetime.utcnow().isoformat()
         entry = {
             "match_id": match_id,
+            "home_team": home_team,
+            "away_team": away_team,
+            "sport": sport,
             "bookmakers": bookmakers,
             "is_arb": is_arb,
             "profit": profit,

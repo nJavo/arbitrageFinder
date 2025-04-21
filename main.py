@@ -22,7 +22,8 @@ seen_match_ids: set[str] = set()
 BANKROLL = 100.0
 
 def _record_and_display(ui: ArbitrageUI, history: BettingHistory, match_id: str,
-                        match_name: str, bookmakers: list[dict]):
+                        match_name: str, bookmakers: list[dict], 
+                        home_team: str = "", away_team: str = "", sport: str = ""):
     home_best = max(b["price_home"] for b in bookmakers if b["price_home"])
     draw_prices = [b.get("price_draw") for b in bookmakers if b.get("price_draw")]
     draw_best = max(draw_prices) if draw_prices else None
@@ -40,6 +41,9 @@ def _record_and_display(ui: ArbitrageUI, history: BettingHistory, match_id: str,
         is_arb=arb,
         profit=profit,
         timestamp=datetime.utcnow().isoformat(),
+        home_team=home_team,
+        away_team=away_team,
+        sport=sport
     )
 
     ui.add_any_match(match_id, match_name, home_best, away_best, arb, profit)
@@ -67,7 +71,10 @@ def mock_odds_loop(ui: ArbitrageUI, history: BettingHistory):
             {"site": site_a, "price_home": odds_a, "price_draw": None, "price_away": None},
             {"site": site_b, "price_home": None,   "price_draw": None, "price_away": odds_b},
         ]
-        _record_and_display(ui, history, match_id, f"{team_a} vs {team_b}", bookmakers)
+        _record_and_display(
+            ui, history, match_id, f"{team_a} vs {team_b}", bookmakers,
+            home_team=team_a, away_team=team_b, sport="Mock Sport"
+        )
         time.sleep(0.5)
 
 
@@ -75,7 +82,6 @@ def real_odds_loop(ui: ArbitrageUI, history: BettingHistory):
     regions = "us,eu,uk,au"
     
     while True:
-        # Check if UI is currently set to fetch data
         if not ui.is_fetching_enabled():
             time.sleep(1)
             continue
@@ -168,7 +174,10 @@ def process_events(events, ui, history):
             continue
 
         match_name = f"[{sport_title}] {team_a} vs {team_b}"
-        _record_and_display(ui, history, match_id, match_name, bookmakers)
+        _record_and_display(
+            ui, history, match_id, match_name, bookmakers,
+            home_team=team_a, away_team=team_b, sport=sport_title
+        )
 
 if __name__ == "__main__":
     root = tk.Tk()
